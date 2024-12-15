@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Color Indexing and Editing</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        padding: 20px;
+        background-color: #f0f0f0;
+        text-align: center;
+      }
+
+      .canvas-container {
+        display: flex; /* Horizontal layout */
+        justify-content: center;
+        gap: 30px; /* Space between canvases */
+        margin: 20px 0;
+      }
+
+      canvas {
+        border: 1px solid #ccc;
+        background-color: #fff;
+        width: 300px; /* Fixed canvas width */
+        height: 200px; /* Fixed canvas height */
+        display: block;
+      }
+
+      #colors {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+        gap: 10px;
+        margin-top: 20px;
+      }
+
+      .color-box {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 10px;
+        background-color: #ffffff;
+        border: 1px solid #ccc;
+        border-radius: 5px;
+      }
+
+      .color-box span {
+        font-weight: bold;
+      }
+
+      .color-picker {
+        width: 50px;
+        height: 30px;
+        border: none;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Color Indexing and Editing</h1>
+    <p>Upload a PNG file to extract colors, index, and modify dynamically.</p>
+    <input type="file" id="imageInput" accept="image/png, image/svg+xml" />
+
+    <!-- Horizontal Canvas Containers -->
+    <div class="canvas-container">
+      <div>
+        <h3>Original Image</h3>
+        <canvas id="originalCanvas" width="300" height="200"></canvas>
+      </div>
+      <div>
+        <h3>Edited Image</h3>
+        <canvas id="outputCanvas" width="300" height="200"></canvas>
+      </div>
+    </div>
+
+    <div id="colors"></div>
+
+    <script>
+      const imageInput = document.getElementById("imageInput");
+      const originalCanvas = document.getElementById("originalCanvas");
+      const outputCanvas = document.getElementById("outputCanvas");
+      const originalCtx = originalCanvas.getContext("2d");
+      const outputCtx = outputCanvas.getContext("2d");
+      const colorsContainer = document.getElementById("colors");
+
+      let colorMap = [];
+      let colorHashMap = {};
+
+      imageInput.addEventListener("change", (event) => {
+        const file = event.target.files[0];
+        if (file) {
+          const fileType = file.type;
+          if (fileType === "image/png") {
+            loadAndProcessImage(file);
+          } else if (fileType === "image/svg+xml") {
+            alert("SVG support is currently unavailable in this version.");
+          } else {
+            alert("Please upload a valid PNG file.");
+          }
+        }
+      });
+
+      // Load and process PNG image
+      function loadAndProcessImage(file) {
+        const img = new Image();
+        const url = URL.createObjectURL(file);
+
+        img.onload = () => {
+          const scale = Math.min(
+            originalCanvas.width / img.width,
+            originalCanvas.height / img.height
+          ); // Calculate scale to fit image inside canvas
+
+          const scaledWidth = img.width * scale;
+          const scaledHeight = img.height * scale;
+
+          // Clear the canvas before drawing
+          originalCtx.clearRect(
+            0,
+            0,
+            originalCanvas.width,
+            originalCanvas.height
+          );
+          originalCtx.drawImage(
+            img,
+            0,
+            0,
+            img.width,
+            img.height,
+            (originalCanvas.width - scaledWidth) / 2, // Center horizontally
+            (originalCanvas.height - scaledHeight) / 2, // Center vertically
+            scaledWidth,
+            scaledHeight
+          );
+
+          // Initialize output canvas dimensions
+          outputCtx.clearRect(0, 0, outputCanvas.width, outputCanvas.height);
+          extractAndIndexColors();
+        };
+
+        img.src = url;
+      }
+
+      // Extract dominant colors and map them in the image
+      function extractAndIndexColors() {
+        const imageData = originalCtx.getImageData(
+          0,
+          0,
+          originalCanvas.width,
+          originalCanvas.height
+        );
+        const pixelData = imageData.data;
+
+        const colorFrequency = {};
+        // Count color frequency
+        for (let i = 0; i < pixelData.length; i += 4) {
+          const r = pixelData[i];
+          const g = pixelData[i + 1];
+          const b = pixelData[i + 2];
+          const color = `rgb(${r},${g},${b})`;
+
+          if (r !== 0 || g !== 0 || b !== 0) {
+            colorFrequency[color] = (colorFrequency[color] || 0) + 1;
+          }
+        }
+
+        // Sort colors by frequency
+        const sortedColors = Object.entries(colorFrequency)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 10);
+
+        colorMap = sortedColors.map(([color]) => color);
+        colorHashMap = Object.fromEntries(
+          colorMap.map((color, index) => [color, index])
+        );
+
+        renderColors(sortedColors);
+        renderIndexedImage(imageData);
+      }
+
+      // Render extracted colors
+      function renderColors(colors) {
+        colorsContainer.innerHTML = "";
+
+        colors.forEach(([color], index) => {
+          const colorBox = document.createElement("div");
+          colorBox.className = "color-box";
+
+          const colorLabel = document.createElement("span");
+          colorLabel.textContent = `Color ${index + 1}`;
+
+          const colorPicker = document.createElement("input");
+          colorPicker.type = "color";
+          colorPicker.className = "color-picker";
+          colorPicker.value = rgbToHex(color);
+
+          // Update color map and re-render image on color change
+          colorPicker.addEventListener("input", () => {
+            colorMap[index] = hexToRgb(colorPicker.value);
+            renderIndexedImage();
+          });
+
+          colorBox.appendChild(colorLabel);
+          colorBox.appendChild(colorPicker);
+          colorsContainer.appendChild(colorBox);
+        });
+      }
+
+      // Render the indexed image with updated colors
+      function renderIndexedImage(imageData) {
+        if (!imageData) {
+          imageData = originalCtx.getImageData(
+            0,
+            0,
+            originalCanvas.width,
+            originalCanvas.height
+          );
+        }
+
+        const pixelData = imageData.data;
+        const outputImageData = outputCtx.createImageData(imageData);
+
+        for (let i = 0; i < pixelData.length; i += 4) {
+          const r = pixelData[i];
+          const g = pixelData[i + 1];
+          const b = pixelData[i + 2];
+
+          const color = `rgb(${r},${g},${b})`;
+          const index = colorHashMap[color];
+
+          if (index !== undefined) {
+            const [newR, newG, newB] = colorMap[index]
+              .match(/\d+/g)
+              .map(Number);
+
+            outputImageData.data[i] = newR;
+            outputImageData.data[i + 1] = newG;
+            outputImageData.data[i + 2] = newB;
+            outputImageData.data[i + 3] = 255; // Full opacity
+          }
+        }
+
+        outputCtx.putImageData(outputImageData, 0, 0);
+      }
+
+      // Convert RGB to HEX
+      function rgbToHex(rgb) {
+        const result = rgb
+          .match(/\d+/g)
+          .map((x) => parseInt(x).toString(16).padStart(2, "0"))
+          .join("");
+
+        return `#${result}`;
+      }
+
+      // Convert HEX to RGB
+      function hexToRgb(hex) {
+        const bigint = parseInt(hex.slice(1), 16);
+        const r = (bigint >> 16) & 255;
+        const g = (bigint >> 8) & 255;
+        const b = bigint & 255;
+
+        return `rgb(${r},${g},${b})`;
+      }
+    </script>
+  </body>
+</html>
